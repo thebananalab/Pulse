@@ -1,102 +1,58 @@
-// pulse/api/analyze.js
-
 module.exports = async (req, res) => {
-  // 1. Control de método
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { prompt, noWebsite } = req.body;
-
-  if (!prompt) {
-    return res.status(400).json({ error: "Missing prompt" });
-  }
-
-  // 2. Validación de API Key (DENTRO de la función)
+  const { prompt } = req.body;
   const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-  if (!ANTHROPIC_API_KEY) {
-    return res.status(500).json({ 
-      error: "API key not configured en Vercel",
-      env_keys_found: Object.keys(process.env).filter(k => !k.includes('VERCEL'))
-    });
-  }
+
+  if (!ANTHROPIC_API_KEY) return res.status(500).json({ error: "API key missing" });
 
   try {
-    // PASO 1: Investigación con Web Search
-    const res1 = await fetch("https://api.anthropic.com/v1/messages", {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "web-search-2025-03-05",
+        "anthropic-beta": "web-search-2025-03-05", 
       },
       body: JSON.stringify({
         model: "claude-3-5-sonnet-latest",
-        max_tokens: 3000,
+        max_tokens: 2000, // Reducido para ganar velocidad
         tools: [{ type: "web_search_20250305" }],
-        messages: [{ role: "user", content: prompt }],
+        // Forzamos a Claude a que use la herramienta y responda rápido
+        messages: [{ 
+          role: "user", 
+          content: prompt + "\nResponde directamente con el objeto JSON, sé breve en las observaciones." 
+        }],
       }),
     });
 
-    if (!res1.ok) {
-      const err = await res1.json();
-      throw new Error(`Anthropic API error (Step 1): ${err.error?.message || res1.statusText}`);
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error?.message || "Error en Anthropic");
     }
 
-    const data1 = await res1.json();
+    const data = await response.json();
+    
+    // Extraemos el texto de la respuesta
+    const text = data.content.find(c => c.type === 'text')?.text;
+    const json = tryParse(text);
 
-    // Recolectar contexto de la investigación
-    const researchSummary = (data1.content || [])
-      .map((b) => {
-        if (b.type === "text") return b.text;
-        if (b.type === "tool_result") return JSON.stringify(b.content || "");
-        return "";
-      })
-      .filter(Boolean)
-      .join("\n");
+    if (json) return res.status(200).json(json);
+    
+    // Si no hay JSON pero hay texto, lo enviamos igual para no romper el frontend
+    return res.status(200).json({ summary: text || "No se pudo generar el JSON" });
 
-    // Intentar parsear si ya vino el JSON
-    const textBlocks1 = (data1.content || [])
-      .filter((b) => b.type === "text")
-      .map((b) => b.text);
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+};
 
-    for (let i = textBlocks1.length - 1; i >= 0; i--) {
-      const p = tryParse(textBlocks1[i]);
-      if (p && p.assets) return res.status(200).json(p);
-    }
-
-    // PASO 2: Forzar JSON puro
-    const brandMatch = prompt.match(/MARCA: (.+)/);
-    const brandName = brandMatch ? brandMatch[1].trim() : "la marca";
-
-    const jsonPrompt = `Basándote en esta investigación sobre "${brandName}":
-    ${researchSummary.slice(0, 6000)}
-    ${noWebsite ? "REGLA: owned_media status='missing', score=15." : ""}
-    Genera EXCLUSIVAMENTE el JSON solicitado. Sin texto adicional.`;
-
-    const res2 = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-3-5-sonnet-latest",
-        max_tokens: 2000,
-        messages: [{ role: "user", content: jsonPrompt }],
-      }),
-    });
-
-    if (!res2.ok) throw new Error(`Step 2 API error ${res2.status}`);
-    const data2 = await res2.json();
-
-    const resultText = data2.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
-    const finalJson = tryParse(resultText);
-
-    if (finalJson) {
-      return res.status(200).json(finalJson);
-    }
-
-    return res.status(500).json({ error: "No se pudo proces
+function tryParse(text) {
+  if (!text) return null;
+  try {
+    const s = text.indexOf("{"), e = text.lastIndexOf("}");
+    if (s !== -1 && e > s) return JSON.parse(text.slice(s, e + 1));
+  } catch (e) {}
+  return null;
+}
