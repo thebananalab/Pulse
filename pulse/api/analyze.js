@@ -1,7 +1,7 @@
-// 1. Usamos module.exports para que Vercel lo encuentre sí o sí
+// pulse/api/analyze.js
+
 module.exports = async (req, res) => {
-  
-  // Solo aceptamos POST
+  // 1. Control de método
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -12,52 +12,91 @@ module.exports = async (req, res) => {
     return res.status(400).json({ error: "Missing prompt" });
   }
 
-  // 2. Verificación de la API Key dentro de la función
+  // 2. Validación de API Key (DENTRO de la función)
   const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
-
   if (!ANTHROPIC_API_KEY) {
     return res.status(500).json({ 
-      error: "API key not configured",
-      env_keys_found: Object.keys(process.env).filter(k => !k.includes('VERCEL')) 
+      error: "API key not configured en Vercel",
+      env_keys_found: Object.keys(process.env).filter(k => !k.includes('VERCEL'))
     });
   }
 
   try {
-    // LLAMADA A ANTHROPIC (Paso 1: Búsqueda)
+    // PASO 1: Investigación con Web Search
     const res1 = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": ANTHROPIC_API_KEY,
         "anthropic-version": "2023-06-01",
-        "anthropic-beta": "web-search-2025-03-05", 
+        "anthropic-beta": "web-search-2025-03-05",
       },
       body: JSON.stringify({
         model: "claude-3-5-sonnet-latest",
         max_tokens: 3000,
-        tools: [{ type: "web_search_20250305" }], 
+        tools: [{ type: "web_search_20250305" }],
         messages: [{ role: "user", content: prompt }],
       }),
     });
 
     if (!res1.ok) {
       const err = await res1.json();
-      throw new Error(`Anthropic Error: ${err.error?.message || res1.statusText}`);
+      throw new Error(`Anthropic API error (Step 1): ${err.error?.message || res1.statusText}`);
     }
 
     const data1 = await res1.json();
-    
-    // Aquí iría el resto de tu lógica de procesamiento...
-    // Por ahora, devolvemos el resultado de Claude para confirmar que funciona:
-    return res.status(200).json(data1);
 
-  } catch (err) {
-    console.error("ERROR:", err.message);
-    return res.status(500).json({ error: err.message });
-  }
-};
+    // Recolectar contexto de la investigación
+    const researchSummary = (data1.content || [])
+      .map((b) => {
+        if (b.type === "text") return b.text;
+        if (b.type === "tool_result") return JSON.stringify(b.content || "");
+        return "";
+      })
+      .filter(Boolean)
+      .join("\n");
 
-// 3. La función de ayuda fuera del export principal
-function tryParse(text) {
-  // ... tu código de tryParse ...
-}
+    // Intentar parsear si ya vino el JSON
+    const textBlocks1 = (data1.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text);
+
+    for (let i = textBlocks1.length - 1; i >= 0; i--) {
+      const p = tryParse(textBlocks1[i]);
+      if (p && p.assets) return res.status(200).json(p);
+    }
+
+    // PASO 2: Forzar JSON puro
+    const brandMatch = prompt.match(/MARCA: (.+)/);
+    const brandName = brandMatch ? brandMatch[1].trim() : "la marca";
+
+    const jsonPrompt = `Basándote en esta investigación sobre "${brandName}":
+    ${researchSummary.slice(0, 6000)}
+    ${noWebsite ? "REGLA: owned_media status='missing', score=15." : ""}
+    Genera EXCLUSIVAMENTE el JSON solicitado. Sin texto adicional.`;
+
+    const res2 = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-3-5-sonnet-latest",
+        max_tokens: 2000,
+        messages: [{ role: "user", content: jsonPrompt }],
+      }),
+    });
+
+    if (!res2.ok) throw new Error(`Step 2 API error ${res2.status}`);
+    const data2 = await res2.json();
+
+    const resultText = data2.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+    const finalJson = tryParse(resultText);
+
+    if (finalJson) {
+      return res.status(200).json(finalJson);
+    }
+
+    return res.status(500).json({ error: "No se pudo proces
