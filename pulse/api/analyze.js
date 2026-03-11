@@ -11,7 +11,7 @@ export default async function handler(req, res) {
 
   const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
   if (!ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error: "API key not configured en Vercel" });
+    return res.status(500).json({ error: "Key no encontrada" });
   }
 
   try {
