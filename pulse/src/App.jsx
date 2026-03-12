@@ -242,12 +242,17 @@ export default function App() {
         body: JSON.stringify({ prompt, noWebsite }),
       });
 
+      const text = await res.text();
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `Error ${res.status}`);
+        let msg = `Error ${res.status}`;
+        try { msg = JSON.parse(text).error || msg; } catch {}
+        throw new Error(msg);
       }
 
-      const r = await res.json();
+      let r;
+      try { r = JSON.parse(text); } catch {
+        throw new Error("Respuesta invalida del servidor");
+      }
       if (!r || !r.assets) throw new Error("Reporte invalido recibido");
       setReport(r);
       setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
