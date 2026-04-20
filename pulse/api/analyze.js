@@ -1,4 +1,4 @@
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "AIzaSyD6BUNVbnhG5pPjTL4jEgs_YlRpKfekQG8";
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 function tryParse(text) {
