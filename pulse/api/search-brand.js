@@ -1,4 +1,4 @@
-const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 function tryParseJSON(text) {
   try {
@@ -36,7 +36,8 @@ Devuelve SOLO este JSON. URLs reales que conozcas. Si no existe alguna, deja el 
 
     if (!response.ok) {
       const err = await response.text();
-      return res.status(502).json({ error: `Gemini error: ${err.slice(0, 120)}` });
+      console.error(`Gemini search-brand ${response.status}:`, err);
+      return res.status(502).json({ error: `Gemini error: ${err.slice(0, 300)}` });
     }
 
     const data = await response.json();

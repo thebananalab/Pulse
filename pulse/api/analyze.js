@@ -1,4 +1,4 @@
-const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 function tryParse(text) {
   if (!text) return null;
@@ -41,7 +41,8 @@ async function callGemini(prompt, maxTokens = 2000) {
 
   if (!response.ok) {
     const err = await response.text();
-    throw new Error(`Gemini error ${response.status}: ${err.slice(0, 200)}`);
+    console.error(`Gemini ${response.status}:`, err);
+    throw new Error(`Gemini error ${response.status}: ${err.slice(0, 300)}`);
   }
 
   const data = await response.json();
