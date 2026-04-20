@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { saveEmail } from "./firebase";
 
 const C = {
   cream: "#f5f2eb",
@@ -38,6 +39,28 @@ const HORIZON_CONFIG = {
   mid:   { label: "Medio plazo", sub: "3 - 9 meses",  color: C.mid,   bg: C.midBg   },
   long:  { label: "Largo plazo", sub: "9 - 18 meses", color: C.long,  bg: C.longBg  },
 };
+
+const CACHE_PREFIX = "blink_report_";
+const EMAIL_KEY    = "blink_email_collected";
+
+function cacheKey(brand, website) {
+  const b = (brand || "").toLowerCase().trim().replace(/\s+/g, "_");
+  const w = (website || "").toLowerCase().trim().replace(/https?:\/\//, "").replace(/\/$/, "");
+  return CACHE_PREFIX + b + (w ? `__${w}` : "");
+}
+
+function getCache(brand, website) {
+  try {
+    const raw = localStorage.getItem(cacheKey(brand, website));
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function setCache(brand, website, data) {
+  try {
+    localStorage.setItem(cacheKey(brand, website), JSON.stringify(data));
+  } catch {}
+}
 
 function buildPrompt(brandName, webLine, socialsText) {
   return `Eres un consultor senior de growth y marketing digital. Investiga y analiza el ecosistema digital de esta marca usando informacion publica.
@@ -204,6 +227,95 @@ function InputField({ label, value, onChange, placeholder, full }) {
   );
 }
 
+function EmailModal({ brandName, onClose }) {
+  const [email, setEmail] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [done, setDone] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const submit = async () => {
+    if (!email || !email.includes("@")) { setErr("Email invalido."); return; }
+    setSaving(true); setErr(null);
+    try {
+      await saveEmail(email, brandName);
+      localStorage.setItem(EMAIL_KEY, "1");
+      setDone(true);
+    } catch (e) {
+      setErr("Error al guardar. Intenta de nuevo.");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(26,26,24,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000,
+    }} onClick={onClose}>
+      <div style={{
+        background: C.cream, border: `1px solid ${C.inkLine}`,
+        padding: "44px 48px", maxWidth: 420, width: "90%",
+        animation: "fadeUp 0.3s ease both",
+      }} onClick={e => e.stopPropagation()}>
+        {done ? (
+          <>
+            <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: C.ink, marginBottom: 10 }}>Listo.</p>
+            <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.7 }}>Email guardado. Te enviamos el reporte.</p>
+            <button onClick={onClose} style={{
+              marginTop: 28, background: C.ink, color: C.cream, border: "none",
+              padding: "11px 28px", fontSize: 11, letterSpacing: "0.12em",
+              textTransform: "uppercase", cursor: "pointer", fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+            }}>Cerrar</button>
+          </>
+        ) : (
+          <>
+            <p style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 12 }}>Reporte listo</p>
+            <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 20, fontWeight: 700, color: C.ink, marginBottom: 10, lineHeight: 1.2 }}>
+              Recibe el diagnostico<br/>en tu email.
+            </p>
+            <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.7, marginBottom: 28 }}>
+              Ingresa tu email para guardar y recibir este reporte.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase" }}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && submit()}
+                placeholder="tu@email.com"
+                autoFocus
+                style={{
+                  background: "transparent", border: "none", borderBottom: `1px solid ${C.inkLine}`,
+                  padding: "9px 0", fontSize: 14, color: C.ink, fontFamily: "'DM Sans', sans-serif",
+                  outline: "none",
+                }}
+              />
+            </div>
+            {err && <p style={{ marginTop: 10, fontSize: 12, color: C.missing, fontStyle: "italic" }}>{err}</p>}
+            <div style={{ marginTop: 28, display: "flex", gap: 16, alignItems: "center" }}>
+              <button onClick={submit} disabled={saving} style={{
+                background: saving ? C.inkFaint : C.ink, color: C.cream, border: "none",
+                padding: "11px 28px", fontSize: 11, letterSpacing: "0.12em",
+                textTransform: "uppercase", cursor: saving ? "not-allowed" : "pointer",
+                fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
+              }}>
+                {saving ? "Guardando..." : "Enviar reporte"}
+              </button>
+              <button onClick={onClose} style={{
+                background: "transparent", border: "none", fontSize: 11,
+                color: C.inkFaint, cursor: "pointer", letterSpacing: "0.1em",
+                textTransform: "uppercase", fontFamily: "'DM Sans', sans-serif",
+              }}>
+                Omitir
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [form, setForm] = useState({
     brand: "", website: "",
@@ -213,12 +325,22 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [error, setError] = useState(null);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const reportRef = useRef(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const analyze = async () => {
     if (!form.brand) return;
+
+    const cached = getCache(form.brand, form.website);
+    if (cached) {
+      setReport(cached);
+      setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      if (!localStorage.getItem(EMAIL_KEY)) setShowEmailModal(true);
+      return;
+    }
+
     setLoading(true); setError(null); setReport(null);
     try {
       const noWebsite = !form.website || form.website.trim() === "";
@@ -254,8 +376,11 @@ export default function App() {
         throw new Error("Respuesta invalida del servidor");
       }
       if (!r || !r.assets) throw new Error("Reporte invalido recibido");
+
+      setCache(form.brand, form.website, r);
       setReport(r);
       setTimeout(() => reportRef.current?.scrollIntoView({ behavior: "smooth" }), 100);
+      if (!localStorage.getItem(EMAIL_KEY)) setShowEmailModal(true);
     } catch (e) {
       setError(`${e.message || "Error al analizar. Intenta de nuevo."}`);
     }
@@ -275,8 +400,15 @@ export default function App() {
         @media print { .no-print { display: none !important; } body { background: white !important; } }
       `}</style>
 
+      {showEmailModal && (
+        <EmailModal
+          brandName={report?.brand_name || form.brand}
+          onClose={() => setShowEmailModal(false)}
+        />
+      )}
+
       <nav style={{ borderBottom: `1px solid ${C.inkLine}`, padding: "0 60px", height: 56, display: "flex", alignItems: "center", justifyContent: "space-between", background: C.cream }}>
-        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: "0.12em", textTransform: "uppercase", color: C.ink }}>Pulse</span>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: "0.12em", textTransform: "uppercase", color: C.ink }}>BLINK</span>
         <span style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.14em", textTransform: "uppercase" }}>Digital Brand Diagnostics</span>
       </nav>
 
@@ -289,7 +421,7 @@ export default function App() {
               El estado digital<br/>de cualquier marca.
             </h1>
             <p style={{ marginTop: 18, fontSize: 14, color: C.inkLight, lineHeight: 1.7, maxWidth: 400 }}>
-              Ingresa los datos publicos de la marca. Pulse analiza senales externas y genera un diagnostico completo con roadmap de mejoras.
+              Ingresa los datos publicos de la marca. BLINK analiza senales externas y genera un diagnostico completo con roadmap de mejoras.
             </p>
           </div>
 
@@ -386,7 +518,7 @@ export default function App() {
             )}
 
             <div style={{ borderTop: `1px solid ${C.inkLine}`, paddingTop: 24, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.1em", textTransform: "uppercase" }}>Pulse</span>
+              <span style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.1em", textTransform: "uppercase" }}>BLINK</span>
               <span style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.1em" }}>Diagnostico externo basado en senales publicas</span>
             </div>
           </div>
