@@ -57,9 +57,128 @@ function getCache(brand, website) {
 }
 
 function setCache(brand, website, data) {
-  try {
-    localStorage.setItem(cacheKey(brand, website), JSON.stringify(data));
-  } catch {}
+  try { localStorage.setItem(cacheKey(brand, website), JSON.stringify(data)); } catch {}
+}
+
+function scoreColor(score) {
+  return score >= 70 ? C.strong : score >= 45 ? C.weak : C.missing;
+}
+
+function statusLabel(s) {
+  return s === "strong" ? "Solido" : s === "weak" ? "Debil" : "Ausente";
+}
+
+function downloadReport(report) {
+  const gc = scoreColor(report.score_global || 0);
+
+  const assetRowsHTML = ASSETS.map(a => {
+    const d = report.assets?.[a.key];
+    if (!d) return "";
+    const sc = scoreColor(d.score || 0);
+    return `
+      <div style="display:grid;grid-template-columns:180px 1fr 80px;gap:20px;padding:16px 0;border-bottom:1px solid #d4d0c8;align-items:start;">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:#1a1a18;margin-bottom:2px;">${a.label}</div>
+          <div style="font-size:10px;color:#a8a89e;text-transform:uppercase;letter-spacing:0.06em;">${a.desc}</div>
+        </div>
+        <div>
+          <p style="margin:0 0 5px;font-size:12px;color:#3a3a36;line-height:1.7;">${d.observations}</p>
+          ${d.gap ? `<p style="margin:0;font-size:11px;color:#6b6b64;font-style:italic;">Gap — ${d.gap}</p>` : ""}
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:9px;text-transform:uppercase;letter-spacing:0.1em;color:${sc};margin-bottom:4px;">${statusLabel(d.status)}</div>
+          <div style="font-size:22px;font-weight:700;color:${sc};">${d.score}</div>
+        </div>
+      </div>`;
+  }).join("");
+
+  const horizonColors = { short: C.short, mid: C.mid, long: C.long };
+  const horizonLabels = { short: "Corto plazo — 0 a 3 meses", mid: "Medio plazo — 3 a 9 meses", long: "Largo plazo — 9 a 18 meses" };
+
+  const roadmapHTML = ["short", "mid", "long"].map(h => {
+    const items = report.roadmap?.[h];
+    if (!items?.length) return "";
+    const hc = horizonColors[h];
+    const assetMap = Object.fromEntries(ASSETS.map(a => [a.key, a]));
+    const cards = items.map((item, i) => `
+      <div style="padding:16px;border:1px solid ${hc}22;background:#f9f8f5;">
+        <div style="font-size:10px;color:${hc};letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">
+          ${String(i + 1).padStart(2, "0")}${item.asset && assetMap[item.asset] ? ` · ${assetMap[item.asset].label}` : ""}
+        </div>
+        <div style="font-size:13px;font-weight:700;color:#1a1a18;margin-bottom:6px;line-height:1.3;">${item.title}</div>
+        <div style="font-size:12px;color:#3a3a36;line-height:1.65;">${item.description}</div>
+      </div>`).join("");
+    return `
+      <div style="border-top:1px solid #d4d0c8;padding-top:24px;margin-top:24px;">
+        <div style="font-size:14px;font-weight:700;color:#1a1a18;margin-bottom:4px;">${horizonLabels[h]}</div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:14px;">${cards}</div>
+      </div>`;
+  }).join("");
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BLINK — ${report.brand_name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f5f2eb; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; color: #1a1a18; }
+    @media print { body { background: white; } }
+  </style>
+</head>
+<body>
+  <div style="max-width:900px;margin:0 auto;padding:48px 40px;">
+
+    <div style="border-bottom:1px solid #d4d0c8;padding-bottom:20px;margin-bottom:40px;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-size:14px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;">BLINK</span>
+      <span style="font-size:10px;color:#a8a89e;letter-spacing:0.12em;text-transform:uppercase;">Digital Brand Diagnostics</span>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px;gap:32px;">
+      <div style="flex:1;">
+        <div style="font-size:10px;color:#a8a89e;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:10px;">Diagnostico de Ecosistema Digital</div>
+        <h1 style="font-size:36px;font-weight:700;letter-spacing:-0.02em;margin-bottom:16px;">${report.brand_name}</h1>
+        <p style="font-size:13px;color:#3a3a36;line-height:1.8;max-width:500px;">${report.summary}</p>
+      </div>
+      <div style="border:1px solid #d4d0c8;background:#fff;padding:16px 20px;text-align:center;min-width:80px;">
+        <div style="font-size:32px;font-weight:700;color:${gc};line-height:1;">${report.score_global}</div>
+        <div style="font-size:9px;color:#a8a89e;letter-spacing:0.1em;text-transform:uppercase;margin-top:3px;">Score</div>
+      </div>
+    </div>
+
+    ${report.biggest_opportunity ? `
+    <div style="border-top:1px solid #d4d0c8;border-bottom:1px solid #d4d0c8;padding:20px 0;margin-bottom:36px;display:flex;gap:16px;align-items:flex-start;">
+      <span style="font-size:10px;color:#a8a89e;letter-spacing:0.1em;text-transform:uppercase;min-width:120px;padding-top:2px;">Mayor oportunidad</span>
+      <p style="font-size:14px;font-style:italic;color:#1a1a18;line-height:1.6;">"${report.biggest_opportunity}"</p>
+    </div>` : ""}
+
+    <div style="margin-bottom:40px;">
+      <div style="font-size:10px;color:#a8a89e;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px;">Evaluacion por Asset</div>
+      <div style="border-top:1px solid #d4d0c8;">${assetRowsHTML}</div>
+    </div>
+
+    <div style="font-size:10px;color:#a8a89e;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:4px;">Roadmap de Mejoras</div>
+    ${roadmapHTML}
+
+    <div style="border-top:1px solid #d4d0c8;margin-top:48px;padding-top:20px;display:flex;justify-content:space-between;">
+      <span style="font-size:10px;color:#a8a89e;letter-spacing:0.1em;text-transform:uppercase;">BLINK</span>
+      <span style="font-size:10px;color:#a8a89e;">Diagnostico externo basado en senales publicas</span>
+    </div>
+
+  </div>
+</body>
+</html>`;
+
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `blink-${report.brand_name.toLowerCase().replace(/\s+/g, "-")}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function buildPrompt(brandName, webLine, socialsText) {
@@ -85,14 +204,14 @@ Devuelve UNICAMENTE un JSON valido. Sin texto. Sin backticks. Solo JSON puro.
   "summary": "Resumen ejecutivo 2-3 frases. Tono directo y profesional.",
   "score_global": 65,
   "assets": {
-    "owned_media":    { "status": "strong|weak|missing", "score": 75, "observations": "1) CTAs: hay CTA claro above the fold, copy especifico o generico. 2) Copy: diferenciado o corporativo, habla al cliente o de la empresa. 3) UX: navegacion, jerarquia visual, mobile-first, velocidad, estructura del funnel.", "gap": "Gap principal en CTAs, copy o UX — o SIN CANAL PROPIO si no tiene web" },
-    "seo":            { "status": "strong|weak|missing", "score": 50, "observations": "1) Tecnico: URLs amigables, meta titles, H1 claro, sitemap.xml. 2) Contenido: blog activo, frecuencia, keywords en titulos. 3) Autoridad: presencia en directorios, menciones, indexacion estimada.", "gap": "Gap principal de SEO" },
-    "content":        { "status": "strong|weak|missing", "score": 50, "observations": "observaciones especificas", "gap": "gap detectado" },
-    "data":           { "status": "strong|weak|missing", "score": 30, "observations": "Senales externas: formularios, popups, newsletter visible, lead magnets", "gap": "gap detectado" },
-    "performance":    { "status": "strong|weak|missing", "score": 40, "observations": "Senales externas: pixels detectables, landing pages, retargeting evidente", "gap": "gap detectado" },
-    "community":      { "status": "strong|weak|missing", "score": 60, "observations": "observaciones especificas", "gap": "gap detectado" },
-    "partnerships":   { "status": "strong|weak|missing", "score": 35, "observations": "observaciones especificas", "gap": "gap detectado" },
-    "technical":      { "status": "strong|weak|missing", "score": 45, "observations": "Senales externas: analytics, chat, herramientas detectables en el sitio", "gap": "gap detectado" }
+    "owned_media":    { "status": "strong|weak|missing", "score": 75, "observations": "...", "gap": "..." },
+    "seo":            { "status": "strong|weak|missing", "score": 50, "observations": "...", "gap": "..." },
+    "content":        { "status": "strong|weak|missing", "score": 50, "observations": "...", "gap": "..." },
+    "data":           { "status": "strong|weak|missing", "score": 30, "observations": "...", "gap": "..." },
+    "performance":    { "status": "strong|weak|missing", "score": 40, "observations": "...", "gap": "..." },
+    "community":      { "status": "strong|weak|missing", "score": 60, "observations": "...", "gap": "..." },
+    "partnerships":   { "status": "strong|weak|missing", "score": 35, "observations": "...", "gap": "..." },
+    "technical":      { "status": "strong|weak|missing", "score": 45, "observations": "...", "gap": "..." }
   },
   "roadmap": {
     "short": [
@@ -131,7 +250,7 @@ function IconAsset({ assetKey, size = 18 }) {
 }
 
 function ScoreBar({ score }) {
-  const color = score >= 70 ? C.strong : score >= 45 ? C.weak : C.missing;
+  const color = scoreColor(score);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
       <div style={{ flex: 1, height: 3, background: C.inkLine, borderRadius: 2 }}>
@@ -207,9 +326,9 @@ function RoadmapBlock({ horizon, items }) {
   );
 }
 
-function InputField({ label, value, onChange, placeholder, full }) {
+function InputField({ label, value, onChange, placeholder, full, style: extraStyle }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: full ? "1 / -1" : undefined }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, gridColumn: full ? "1 / -1" : undefined, ...extraStyle }}>
       <label style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase" }}>{label}</label>
       <input
         value={value}
@@ -227,7 +346,7 @@ function InputField({ label, value, onChange, placeholder, full }) {
   );
 }
 
-function EmailModal({ brandName, onClose }) {
+function EmailModal({ brandName, report, onClose }) {
   const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
@@ -237,11 +356,21 @@ function EmailModal({ brandName, onClose }) {
     if (!email || !email.includes("@")) { setErr("Email invalido."); return; }
     setSaving(true); setErr(null);
     try {
-      await saveEmail(email, brandName);
+      const res = await fetch("/api/send-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, report }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Error al enviar");
+
+      // Save to Firebase — fire and forget
+      saveEmail(email, brandName).catch(() => {});
+
       localStorage.setItem(EMAIL_KEY, "1");
       setDone(true);
     } catch (e) {
-      setErr("Error al guardar. Intenta de nuevo.");
+      setErr(e.message || "Error al enviar. Intenta de nuevo.");
     }
     setSaving(false);
   };
@@ -258,8 +387,8 @@ function EmailModal({ brandName, onClose }) {
       }} onClick={e => e.stopPropagation()}>
         {done ? (
           <>
-            <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: C.ink, marginBottom: 10 }}>Listo.</p>
-            <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.7 }}>Email guardado. Te enviamos el reporte.</p>
+            <p style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 700, color: C.ink, marginBottom: 10 }}>Enviado.</p>
+            <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.7 }}>Reporte enviado a <strong>{email}</strong>. Revisa tu bandeja de entrada.</p>
             <button onClick={onClose} style={{
               marginTop: 28, background: C.ink, color: C.cream, border: "none",
               padding: "11px 28px", fontSize: 11, letterSpacing: "0.12em",
@@ -273,7 +402,7 @@ function EmailModal({ brandName, onClose }) {
               Recibe el diagnostico<br/>en tu email.
             </p>
             <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.7, marginBottom: 28 }}>
-              Ingresa tu email para guardar y recibir este reporte.
+              Te enviamos el reporte completo a tu correo.
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <label style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase" }}>Email</label>
@@ -299,7 +428,7 @@ function EmailModal({ brandName, onClose }) {
                 textTransform: "uppercase", cursor: saving ? "not-allowed" : "pointer",
                 fontFamily: "'DM Sans', sans-serif", fontWeight: 600,
               }}>
-                {saving ? "Guardando..." : "Enviar reporte"}
+                {saving ? "Enviando..." : "Enviar reporte"}
               </button>
               <button onClick={onClose} style={{
                 background: "transparent", border: "none", fontSize: 11,
@@ -322,13 +451,47 @@ export default function App() {
     instagram: "", linkedin: "", tiktok: "", twitter: "",
     youtube: "", facebook: "", pinterest: "", threads: "",
   });
-  const [loading, setLoading] = useState(false);
-  const [report, setReport] = useState(null);
-  const [error, setError] = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [searching, setSearching]   = useState(false);
+  const [searchDone, setSearchDone] = useState(false);
+  const [report, setReport]         = useState(null);
+  const [error, setError]           = useState(null);
   const [showEmailModal, setShowEmailModal] = useState(false);
   const reportRef = useRef(null);
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }));
+    if (k === "brand") setSearchDone(false);
+  };
+
+  const searchBrand = async () => {
+    if (!form.brand || form.brand.length < 2) return;
+    setSearching(true);
+    try {
+      const res = await fetch("/api/search-brand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brand: form.brand }),
+      });
+      const data = await res.json();
+      if (data && !data.error) {
+        setForm(f => ({
+          ...f,
+          website:   data.website   || f.website,
+          instagram: data.instagram || f.instagram,
+          linkedin:  data.linkedin  || f.linkedin,
+          tiktok:    data.tiktok    || f.tiktok,
+          twitter:   data.twitter   || f.twitter,
+          youtube:   data.youtube   || f.youtube,
+          facebook:  data.facebook  || f.facebook,
+          pinterest: data.pinterest || f.pinterest,
+          threads:   data.threads   || f.threads,
+        }));
+        setSearchDone(true);
+      }
+    } catch {}
+    setSearching(false);
+  };
 
   const analyze = async () => {
     if (!form.brand) return;
@@ -388,7 +551,7 @@ export default function App() {
   };
 
   const globalScore = report?.score_global || 0;
-  const globalColor = globalScore >= 70 ? C.strong : globalScore >= 45 ? C.weak : C.missing;
+  const globalColor = scoreColor(globalScore);
 
   return (
     <div style={{ minHeight: "100vh", background: C.cream, fontFamily: "'DM Sans', sans-serif", color: C.ink }}>
@@ -403,6 +566,7 @@ export default function App() {
       {showEmailModal && (
         <EmailModal
           brandName={report?.brand_name || form.brand}
+          report={report}
           onClose={() => setShowEmailModal(false)}
         />
       )}
@@ -421,14 +585,62 @@ export default function App() {
               El estado digital<br/>de cualquier marca.
             </h1>
             <p style={{ marginTop: 18, fontSize: 14, color: C.inkLight, lineHeight: 1.7, maxWidth: 400 }}>
-              Ingresa los datos publicos de la marca. BLINK analiza senales externas y genera un diagnostico completo con roadmap de mejoras.
+              Ingresa el nombre de la marca y BLINK busca su presencia digital automaticamente.
             </p>
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "28px 48px", maxWidth: 640 }}>
-            <InputField label="Nombre de la marca *" value={form.brand} onChange={v => set("brand", v)} placeholder="Acme Studio" full />
+            {/* Brand name with search button */}
+            <div style={{ gridColumn: "1 / -1", display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase" }}>Nombre de la marca *</label>
+              <div style={{ display: "flex", gap: 16, alignItems: "flex-end" }}>
+                <input
+                  value={form.brand}
+                  onChange={e => set("brand", e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && form.brand.length > 2 && searchBrand()}
+                  placeholder="Acme Studio"
+                  style={{
+                    flex: 1, background: "transparent", border: "none",
+                    borderBottom: `1px solid ${C.inkLine}`,
+                    padding: "9px 0", fontSize: 14, color: C.ink,
+                    fontFamily: "'DM Sans', sans-serif", outline: "none",
+                  }}
+                  onFocus={e => e.target.style.borderBottomColor = C.ink}
+                  onBlur={e => e.target.style.borderBottomColor = C.inkLine}
+                />
+                {form.brand.length > 2 && (
+                  <button
+                    onClick={searchBrand}
+                    disabled={searching}
+                    style={{
+                      background: "transparent",
+                      border: `1px solid ${searching ? C.inkFaint : C.inkLine}`,
+                      padding: "7px 18px", fontSize: 10, letterSpacing: "0.1em",
+                      textTransform: "uppercase", color: searching ? C.inkFaint : C.inkLight,
+                      cursor: searching ? "not-allowed" : "pointer",
+                      fontFamily: "'DM Sans', sans-serif", whiteSpace: "nowrap",
+                      transition: "all 0.2s",
+                    }}
+                  >
+                    {searching ? "Buscando..." : "Buscar info"}
+                  </button>
+                )}
+              </div>
+            </div>
+
             <InputField label="Sitio web (opcional)" value={form.website} onChange={v => set("website", v)} placeholder="https://acme.com" full />
           </div>
+
+          {searchDone && (
+            <div style={{
+              marginTop: 20, padding: "12px 18px",
+              background: C.strongBg, border: `1px solid ${C.strong}33`,
+              display: "flex", alignItems: "center", gap: 10, maxWidth: 640,
+            }}>
+              <span style={{ fontSize: 12, color: C.strong }}>✓</span>
+              <span style={{ fontSize: 12, color: C.inkMid }}>Datos encontrados para <strong>{form.brand}</strong> — verifica y edita si es necesario.</span>
+            </div>
+          )}
 
           <div style={{ marginTop: 32 }}>
             <p style={{ fontSize: 10, color: C.inkFaint, letterSpacing: "0.12em", textTransform: "uppercase", marginBottom: 20 }}>Redes sociales</p>
@@ -469,7 +681,7 @@ export default function App() {
                   Alerta critica — Sin canal propio
                 </p>
                 <p style={{ fontSize: 13, color: C.inkMid, lineHeight: 1.75, maxWidth: 620 }}>
-                  Esta marca no tiene sitio web propio. Esto significa que <strong style={{ color: C.ink }}>no posee ningun activo digital real</strong> — su audiencia, contenido y datos viven en plataformas de terceros que pueden cambiar algoritmos, aumentar costos o desaparecer. La prioridad absoluta es construir un canal propio con dominio, web y sistema de captura de datos antes de cualquier otra accion de marketing.
+                  Esta marca no tiene sitio web propio. Esto significa que <strong style={{ color: C.ink }}>no posee ningun activo digital real</strong> — su audiencia, contenido y datos viven en plataformas de terceros que pueden cambiar algoritmos, aumentar costos o desaparecer.
                 </p>
               </div>
             )}
@@ -489,8 +701,21 @@ export default function App() {
                   <button className="no-print" onClick={() => window.print()} style={{
                     background: "transparent", border: `1px solid ${C.inkLine}`,
                     padding: "7px 16px", fontSize: 10, letterSpacing: "0.1em",
-                    textTransform: "uppercase", color: C.inkLight, cursor: "pointer", fontFamily: "'DM Sans', sans-serif"
+                    textTransform: "uppercase", color: C.inkLight, cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif", width: "100%",
                   }}>Exportar PDF</button>
+                  <button className="no-print" onClick={() => downloadReport(report)} style={{
+                    background: "transparent", border: `1px solid ${C.inkLine}`,
+                    padding: "7px 16px", fontSize: 10, letterSpacing: "0.1em",
+                    textTransform: "uppercase", color: C.inkLight, cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif", width: "100%",
+                  }}>Descargar HTML</button>
+                  <button className="no-print" onClick={() => setShowEmailModal(true)} style={{
+                    background: C.ink, border: "none",
+                    padding: "7px 16px", fontSize: 10, letterSpacing: "0.1em",
+                    textTransform: "uppercase", color: C.cream, cursor: "pointer",
+                    fontFamily: "'DM Sans', sans-serif", width: "100%",
+                  }}>Enviar por email</button>
                 </div>
               </div>
               {report.biggest_opportunity && (

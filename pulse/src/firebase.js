@@ -15,9 +15,15 @@ const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 
 export async function saveEmail(email, brandName) {
-  await addDoc(collection(db, "leads"), {
-    email,
-    brand: brandName || "",
-    createdAt: serverTimestamp(),
-  });
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("timeout")), 6000)
+  );
+  await Promise.race([
+    addDoc(collection(db, "leads"), {
+      email,
+      brand: brandName || "",
+      createdAt: serverTimestamp(),
+    }),
+    timeout,
+  ]);
 }
