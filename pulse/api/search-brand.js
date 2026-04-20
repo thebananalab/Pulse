@@ -1,6 +1,4 @@
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-if (!GEMINI_API_KEY) throw new Error("GEMINI_API_KEY not set in environment variables");
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
 
 function tryParseJSON(text) {
   try {
@@ -24,7 +22,10 @@ Devuelve SOLO este JSON. URLs reales que conozcas. Si no existe alguna, deja el 
 {"website":"","instagram":"","linkedin":"","tiktok":"","twitter":"","youtube":"","facebook":"","pinterest":"","threads":""}`;
 
   try {
-    const response = await fetch(GEMINI_URL, {
+    const key = process.env.GEMINI_API_KEY;
+    if (!key) return res.status(500).json({ error: "GEMINI_API_KEY not set in Vercel environment variables" });
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${key}`;
+    const response = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
